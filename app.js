@@ -1,6 +1,7 @@
-// Configuración inicial de ApexCharts
+// Configuración inicial
 let chart;
 const defaultCountry = 'CR'; // Costa Rica por defecto
+const allowedCountries = ['MX', 'IN', 'BR', 'CR']; // Países permitidos: México, India, Brasil, Costa Rica
 const defaultIndicator = 'NY.GDP.MKTP.KD.ZG';
 
 async function init() {
@@ -16,22 +17,29 @@ async function init() {
 async function loadCountries() {
     const select = document.getElementById('countrySelect');
     try {
-        // Consultar lista completa de países (per_page=300 para evitar paginación) [7]
+        // Se consulta el endpoint /country que devuelve metadatos y nombres oficiales [1, 3, 4]
         const response = await fetch('https://api.worldbank.org/v2/country?per_page=300&format=json');
         const data = await response.json();
         
+        // El Banco Mundial devuelve un array donde el segundo elemento [5] contiene la lista de países [6]
+        const countriesList = data[5];
+
         select.innerHTML = '';
-        data[8].forEach(country => {
-            if (country.region.value !== "Aggregates") {
+        countriesList.forEach(country => {
+            // Filtro de seguridad: Solo permitir IDs dentro de la lista allowedCountries
+            if (allowedCountries.includes(country.id)) {
                 const option = document.createElement('option');
                 option.value = country.id;
                 option.textContent = country.name;
+                
+                // Establecer Costa Rica como seleccionado por defecto
                 if (country.id === defaultCountry) option.selected = true;
+                
                 select.appendChild(option);
             }
         });
     } catch (error) {
-        console.error("Error cargando países:", error);
+        console.error("Error cargando la lista restringida de países:", error);
     }
 }
 
@@ -40,18 +48,17 @@ function renderChart() {
         chart: {
             type: 'area',
             height: 400,
-            toolbar: { show: true }, // Herramientas profesionales de exportación [9]
+            toolbar: { show: true }, 
             zoom: { enabled: false }
         },
-        colors: ['#0f172a'], // Slate-900 para apariencia profesional
+        colors: ['#0f172a'], // Color profesional Slate-900
         series: [],
         xaxis: { categories: [] },
         yaxis: {
             labels: {
-                formatter: (val) => val.toLocaleString() // Formato de números legibles [6]
+                formatter: (val) => val ? val.toLocaleString() : 0 
             }
         },
-        dataLabels: { enabled: false },
         stroke: { curve: 'smooth' },
         noData: { text: 'Cargando datos...' }
     };
@@ -61,24 +68,28 @@ function renderChart() {
 
 async function updateData(country, indicator) {
     try {
-        // Consulta con mrv=3 para obtener los 3 años más recientes con datos [2, 3]
+        // Uso del parámetro mrv=3 para asegurar la recuperación de los últimos 3 años disponibles [7-9]
         const response = await fetch(`https://api.worldbank.org/v2/country/${country}/indicator/${indicator}?mrv=3&format=json`);
         const data = await response.json();
 
-        if (!data[8]) {
-            chart.updateSeries([{ name: 'Sin datos', data: [] }]);
+        // Verificación de existencia de datos para el indicador en ese país [10]
+        if (!data || !data[5]) {
+            chart.updateSeries([{ name: 'Sin datos disponibles', data: [] }]);
             return;
         }
 
-        // Preparar datos (vienen del más reciente al más antiguo, invertimos para el gráfico)
-        const readings = data[8].reverse();
+        const readings = data[5].reverse();
         const values = readings.map(r => r.value);
         const labels = readings.map(r => r.date);
         const indicatorName = readings.indicator.value;
 
         chart.updateOptions({
             xaxis: { categories: labels },
-            title: { text: indicatorName, align: 'center', style: { color: '#334155' } }
+            title: { 
+                text: `${indicatorName} - ${country}`, 
+                align: 'center', 
+                style: { color: '#334155', fontSize: '16px' } 
+            }
         });
         chart.updateSeries([{ name: country, data: values }]);
     } catch (error) {
